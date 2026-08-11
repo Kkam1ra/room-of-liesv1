@@ -1,78 +1,72 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Room of Lies v1.9.5</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Room of Lies v1.9.8</title>
 <style>
     * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
   body { background: #111; color: #eee; margin: 0; padding: 10px; }
-  .hidden { display: none; }
-  .container { max-width: 600px; margin: auto; }
+.hidden { display: none; }.container { max-width: 600px; margin: auto; }
   button { background: #55ff55; color: #000; border: none; padding: 12px; border-radius: 8px; font-weight: bold; width: 100%; margin-top: 8px; cursor: pointer; }
-  button.danger { background: #ff5555; color: #fff; }
   button.secondary { background: #444; color: #fff; }
+  button.alliance { background: #00aaff; color: #fff; }
+  button.gang { background: #ff00ff; color: #fff; }
+  button.vote-btn { background: #ffaa00; padding: 6px 10px; width: auto; font-size: 12px; }
   input { width: 100%; padding: 12px; margin-top: 8px; border-radius: 8px; border: none; background: #222; color: #eee; }
-  .card { background: #1a1a1a; padding: 15px; border-radius: 10px; margin-top: 10px; }
-  .phase { text-align: center; font-size: 18px; font-weight: bold; color: #55ff55; }
-  .timer { text-align: center; font-size: 24px; margin: 5px 0; }
-  .clue { background: #222; padding: 10px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #55ff55; }
-  .chat { height: 200px; overflow-y: auto; background: #000; padding: 10px; border-radius: 8px; margin-top: 10px; }
-  .msg { margin: 4px 0; }
-  .msg .from { font-weight: bold; color: #55ff55; }
-  .player { display: flex; justify-content: space-between; padding: 8px; background: #222; border-radius: 6px; margin: 4px 0; }
-  .player.dead { opacity: 0.4; text-decoration: line-through; }
-  .vote-btn { background: #ffaa00; padding: 6px 10px; width: auto; font-size: 12px; }
-  #roleCard { text-align: center; }
-  #roleCard h2 { color: #55ff55; }
+.card { background: #1a1a1a; padding: 15px; border-radius: 10px; margin-top: 10px; }
+.phase { text-align: center; font-size: 18px; font-weight: bold; color: #55ff55; }
+.timer { text-align: center; font-size: 24px; margin: 5px 0; }
+.clue { background: #222; padding: 10px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #55ff55; }
+.chat { height: 200px; overflow-y: auto; background: #000; padding: 10px; border-radius: 8px; margin-top: 10px; }
+.msg { margin: 4px 0; }.msg.from { font-weight: bold; color: #55ff55; }
+.msg.secret.from { color: #00aaff; }.msg.gang.from { color: #ff00ff; }
+.player { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #222; border-radius: 6px; margin: 4px 0; }
+.player.dead { opacity: 0.4; text-decoration: line-through; }
+.player button { width: auto; padding: 4px 8px; font-size: 11px; }
 </style>
 </head>
 <body>
 <div class="container">
-  <div id="lobby">
-    <h1>Room of Lies</h1>
-    <input id="playerName" placeholder="Enter your name">
+  <div id="lobby"><h1>Room of Lies</h1><input id="playerName" placeholder="Enter your name">
     <button onclick="createRoom(false)">Create Public Room</button>
     <button onclick="createRoom(true)" class="secondary">Create Private Room</button>
     <button onclick="showJoin()">Join with Code</button>
     <button onclick="showPublicRooms()" class="secondary">Join Public Room</button>
-    <div id="joinCodeDiv" class="hidden">
-      <input id="joinCode" placeholder="Room Code">
-      <button onclick="joinRoom()">Join</button>
-    </div>
+    <div id="joinCodeDiv" class="hidden"><input id="joinCode" placeholder="Room Code"><button onclick="joinRoom()">Join</button></div>
     <div id="publicRooms"></div>
   </div>
-  <div id="waiting" class="hidden">
-    <h2>Room Code: <span id="roomCode"></span></h2>
-    <div id="playerList"></div>
-    <button onclick="addBot()">Add Bot</button>
-    <p id="countdown"></p>
-  </div>
+  <div id="waiting" class="hidden"><h2>Room Code: <span id="roomCode"></span></h2><div id="playerList"></div><button onclick="addBot()">Add Bot</button><p id="countdown"></p></div>
   <div id="game" class="hidden">
-    <div class="phase" id="phase">Loading...</div>
-    <div class="timer" id="timer"></div>
-    <div id="roleCard" class="card">
-      <h2 id="roleName"></h2>
-      <p>Number: <span id="playerNumber"></span></p>
-      <p>Agenda: <span id="agenda"></span></p>
-      <p id="teamInfo" class="hidden"></p>
-    </div>
+    <div class="phase" id="phase">Loading...</div><div class="timer" id="timer"></div>
+    <div id="roleCard" class="card"><h2 id="roleName"></h2><p>Number: <span id="playerNumber"></span></p><p>Agenda: <span id="agenda"></span></p><p id="teamInfo" class="hidden"></p></div>
     <div id="clueBox" class="clue hidden"></div>
     <button id="earlyVoteBtn" class="secondary hidden" onclick="requestEarlyVote()">Request Early Vote</button>
     <button id="investigateBtn" class="secondary hidden" onclick="showInvestigate()">Investigate</button>
+
+    <div id="trustBox" class="card hidden">
+      <h3 style="color:#00aaff">Private Alliance</h3>
+      <div id="trustWith"></div>
+      <div id="trustChat" class="chat" style="height:120px"></div>
+      <input id="trustInput" placeholder="Type private message..." onkeydown="if(event.key==='Enter') sendTrust()">
+      <button class="alliance" onclick="sendTrust()">Send Private</button>
+    </div>
+
+    <div id="gangBox" class="card hidden">
+      <h3 style="color:#ff00ff">Secret Gangster Chat</h3>
+      <div id="gangChat" class="chat" style="height:120px"></div>
+      <input id="gangInput" placeholder="Type secret message..." onkeydown="if(event.key==='Enter') sendGang()">
+      <button class="gang" onclick="sendGang()">Send Secret</button>
+    </div>
+
     <div id="votingBox" class="card hidden"><h3>Vote someone out</h3><div id="voteList"></div></div>
-    <div id="policeBox" class="card hidden"><h3>Police Decision</h3><p>Pick who to eliminate from votes</p><div id="policeList"></div></div>
-    <div class="chat" id="chat"></div>
-    <input id="chatInput" placeholder="Type message..." onkeydown="if(event.key==='Enter') sendMsg()">
-    <button onclick="sendMsg()">Send</button>
+    <div class="chat" id="chat"></div><input id="chatInput" placeholder="Type public message..." onkeydown="if(event.key==='Enter') sendMsg()"><button onclick="sendMsg()">Send Public</button>
   </div>
   <div id="gameOver" class="hidden"><h1 id="winnerText"></h1><button onclick="location.reload()">Play Again</button></div>
 </div>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
 const socket = io('https://room-of-lies-a25z.onrender.com');
-socket.on('connect_error', (err) => { alert('Socket failed: ' + err.message); });
-let roomCode = ''; let myId = socket.id; let myRole = ''; let phase = 'lobby';
+let roomCode = ''; let myId = socket.id; let myRole = ''; let phase = 'lobby'; let trustPartner = null;
 socket.on('connect', () => myId = socket.id);
 function createRoom(isPrivate) { const name = document.getElementById('playerName').value || 'Player'; socket.emit('createRoom', {playerName: name, isPrivate}); }
 function showJoin() { document.getElementById('joinCodeDiv').classList.remove('hidden'); }
@@ -81,28 +75,41 @@ function showPublicRooms() { socket.emit('getPublicRooms'); }
 socket.on('publicRoomList', (rooms) => { const div = document.getElementById('publicRooms'); div.innerHTML = '<h3>Public Rooms</h3>' + rooms.map(r => `<button onclick="joinPublic('${r.code}')">${r.code} - ${r.players} players</button>`).join(''); });
 function joinPublic(code) { const name = document.getElementById('playerName').value || 'Player'; socket.emit('joinPublicRoom', {code, playerName: name}); }
 function addBot() { socket.emit('addBot', roomCode); }
-socket.on('roomCreated', ({code, directJoin}) => { roomCode = code; document.getElementById('lobby').classList.add('hidden'); document.getElementById('waiting').classList.remove('hidden'); document.getElementById('roomCode').innerText = code; });
-socket.on('playerList', (players) => { const div = document.getElementById('playerList'); div.innerHTML = players.map(p => `<div class="player ${p.alive ? '' : 'dead'}">${p.name} ${p.isBot ? '[BOT]' : ''} ${p.hasVoted ? '✓' : ''}</div>`).join(''); });
+socket.on('roomCreated', ({code}) => { roomCode = code; document.getElementById('lobby').classList.add('hidden'); document.getElementById('waiting').classList.remove('hidden'); document.getElementById('roomCode').innerText = code; });
+socket.on('playerList', (players) => {
+  const div = document.getElementById('playerList');
+  div.innerHTML = players.map(p => `<div class="player ${p.alive? '' : 'dead'}"><span>${p.name} ${p.isBot? '[BOT]' : ''}</span> ${p.alive? `<button onclick="requestTrust('${p.id}')">Trust</button>` : ''}</div>`).join('');
+});
 socket.on('countdown', (t) => { document.getElementById('countdown').innerText = `Starting in ${t}s...`; });
 socket.on('roleAssigned', (data) => { document.getElementById('waiting').classList.add('hidden'); document.getElementById('game').classList.remove('hidden'); myRole = data.role; document.getElementById('roleName').innerText = data.role; document.getElementById('playerNumber').innerText = data.number; document.getElementById('agenda').innerText = data.agenda; if(data.team) { document.getElementById('teamInfo').classList.remove('hidden'); document.getElementById('teamInfo').innerText = `Secret Team: ${data.team}`; } if(data.role === 'Reporter') document.getElementById('investigateBtn').classList.remove('hidden'); });
 socket.on('roundStart', ({round, total, clue}) => { document.getElementById('clueBox').classList.remove('hidden'); document.getElementById('clueBox').innerText = `Round ${round}/${total} - ${clue}`; });
-socket.on('phaseChange', ({phase: p, time}) => { phase = p; document.getElementById('phase').innerText = p.toUpperCase(); startTimer(time); document.getElementById('earlyVoteBtn').classList.toggle('hidden', p !== 'investigation'); document.getElementById('votingBox').classList.toggle('hidden', p !== 'voting'); document.getElementById('policeBox').classList.toggle('hidden', p !== 'police'); });
+socket.on('phaseChange', ({phase: p, time}) => {
+  phase = p; document.getElementById('phase').innerText = p.toUpperCase(); startTimer(time);
+  document.getElementById('earlyVoteBtn').classList.toggle('hidden', p!== 'investigation');
+  document.getElementById('votingBox').classList.toggle('hidden', p!== 'voting');
+  document.getElementById('gangBox').classList.toggle('hidden',!(p === 'gangster' && myRole === 'Gangster'));
+  document.getElementById('trustBox').classList.toggle('hidden', p === 'lobby');
+});
 let timerInterval; function startTimer(ms) { clearInterval(timerInterval); let s = Math.floor(ms/1000); updateTimer(s); timerInterval = setInterval(() => { s--; updateTimer(s); if(s <= 0) clearInterval(timerInterval); }, 1000); }
 function updateTimer(s) { const m = Math.floor(s/60); const sec = s%60; document.getElementById('timer').innerText = `${m}:${sec.toString().padStart(2,'0')}`; }
 socket.on('publicMsg', ({from, msg}) => { addChat(`<span class="from">${from}:</span> ${msg}`); });
-socket.on('gangsterMsg', ({from, msg}) => { addChat(`<span style="color:#ff5555">[GANGSTER] ${from}:</span> ${msg}`); });
+socket.on('gangsterMsg', ({from, msg}) => { addGangChat(`<span class="from">${from}:</span> ${msg}`); });
+socket.on('trustMsg', ({from, msg}) => { addTrustChat(`<span class="from">${from}:</span> ${msg}`); });
+socket.on('trustRequest', ({fromId, fromName}) => { if(confirm(`${fromName} wants to form a private alliance. Accept?`)) { socket.emit('acceptTrust', {code: roomCode, partnerId: fromId}); } });
+socket.on('trustAccepted', ({partnerId, partnerName}) => { trustPartner = partnerId; document.getElementById('trustWith').innerHTML = `<b>Allied with: ${partnerName}</b>`; });
 socket.on('systemMsg', (msg) => { addChat(`<span style="color:#aaa">[SYSTEM] ${msg}</span>`); });
+socket.on('voteUpdate', (votes) => { socket.emit('getPlayerList', roomCode); socket.once('playerList', (players) => { const div = document.getElementById('voteList'); div.innerHTML = players.filter(p=>p.alive).map(p => `<div class="player"><span>${p.name} - ${votes[p.id] || 0} votes</span> <button class="vote-btn" onclick="vote('${p.id}')">Vote</button></div>`).join(''); }); });
 function addChat(html) { const chat = document.getElementById('chat'); chat.innerHTML += `<div class="msg">${html}</div>`; chat.scrollTop = chat.scrollHeight; }
-function sendMsg() { const input = document.getElementById('chatInput'); const msg = input.value; if(!msg) return; if(phase === 'investigation' || phase === 'discussion') { socket.emit('publicMessage', {code: roomCode, msg}); } else if(phase === 'gangster') { socket.emit('gangsterMessage', {code: roomCode, msg}); } input.value = ''; }
-socket.on('voteUpdate', (votes) => { socket.emit('getPlayerList', roomCode); socket.once('playerList', (players) => { const div = document.getElementById('voteList'); div.innerHTML = players.map(p => `<div class="player">${p.name} - ${votes[p.id] || 0} votes <button class="vote-btn" onclick="vote('${p.id}')">Vote</button></div>`).join(''); }); });
+function addGangChat(html) { const chat = document.getElementById('gangChat'); chat.innerHTML += `<div class="msg gang">${html}</div>`; chat.scrollTop = chat.scrollHeight; }
+function addTrustChat(html) { const chat = document.getElementById('trustChat'); chat.innerHTML += `<div class="msg secret">${html}</div>`; chat.scrollTop = chat.scrollHeight; }
+function sendMsg() { const input = document.getElementById('chatInput'); const msg = input.value; if(!msg) return; socket.emit('publicMessage', {code: roomCode, msg}); input.value = ''; }
+function sendGang() { const input = document.getElementById('gangInput'); const msg = input.value; if(!msg) return; socket.emit('gangsterMessage', {code: roomCode, msg}); input.value = ''; }
+function sendTrust() { const input = document.getElementById('trustInput'); const msg = input.value; if(!msg ||!trustPartner) return; socket.emit('trustMessage', {code: roomCode, toId: trustPartner, msg}); input.value = ''; }
+function requestTrust(id) { socket.emit('requestTrust', {code: roomCode, targetId: id}); }
 function vote(targetId) { socket.emit('publicVote', {code: roomCode, targetId}); }
-socket.on('policeDecision', ({votes}) => { const div = document.getElementById('policeList'); div.innerHTML = Object.keys(votes).map(id => { return `<button onclick="policeChoose('${id}')">${id} - ${votes[id]} votes</button>`; }).join(''); });
-function policeChoose(targetId) { socket.emit('policeChoose', {code: roomCode, targetId}); }
 function requestEarlyVote() { socket.emit('requestEarlyVote', {code: roomCode}); }
-function showInvestigate() { prompt("Enter player name to investigate:"); }
-socket.on('elimination', ({type, name, role}) => { addChat(`<span style="color:#ff5555">[ELIMINATED] ${name} was ${role} - ${type}</span>`); });
+function showInvestigate() { alert("Investigation coming soon"); }
 socket.on('gameOver', ({winner, message}) => { document.getElementById('game').classList.add('hidden'); document.getElementById('gameOver').classList.remove('hidden'); document.getElementById('winnerText').innerText = message; });
 </script>
 </body>
 </html>
-   
