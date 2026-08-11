@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -32,4 +32,60 @@
 
   <!-- LOBBY -->
   <div id="lobby">
-    <h1>Room
+    <h1>Room of Lies</h1>
+    <input id="playerName" placeholder="Enter your name">
+    <button onclick="createRoom(false)">Create Public Room</button>
+    <button onclick="createRoom(true)" class="secondary">Create Private Room</button>
+    <button onclick="showJoin()">Join with Code</button>
+    <button onclick="showPublicRooms()" class="secondary">Join Public Room</button>
+    <div id="joinCodeDiv" class="hidden">
+      <input id="joinCode" placeholder="Room Code">
+      <button onclick="joinRoom()">Join</button>
+    </div>
+    <div id="publicRooms"></div>
+  </div>
+
+  <!-- WAITING ROOM -->
+  <div id="waiting" class="hidden">
+    <h2>Room Code: <span id="roomCode"></span></h2>
+    <div id="playerList"></div>
+    <button onclick="addBot()">Add Bot</button>
+    <p id="countdown"></p>
+  </div>
+
+  <!-- GAME -->
+  <div id="game" class="hidden">
+    <div class="phase" id="phase">Loading...</div>
+    <div class="timer" id="timer"></div>
+    
+    <div id="roleCard" class="card">
+      <h2 id="roleName"></h2>
+      <p>Number: <span id="playerNumber"></span></p>
+      <p>Agenda: <span id="agenda"></span></p>
+      <p id="teamInfo" class="hidden"></p>
+    </div>
+
+    <div id="clueBox" class="clue hidden"></div>
+
+    <button id="earlyVoteBtn" class="secondary hidden" onclick="requestEarlyVote()">Request Early Vote</button>
+    <button id="investigateBtn" class="secondary hidden" onclick="showInvestigate()">Investigate</button>
+
+    <div id="votingBox" class="card hidden">
+      <h3>Vote someone out</h3>
+      <div id="voteList"></div>
+    </div>
+
+    <div id="policeBox" class="card hidden">
+      <h3>Police Decision</h3>
+      <p>Pick who to eliminate from votes</p>
+      <div id="policeList"></div>
+    </div>
+
+    <div class="chat" id="chat"></div>
+    <input id="chatInput" placeholder="Type message..." onkeydown="if(event.key==='Enter') sendMsg()">
+    <button onclick="sendMsg()">Send</button>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="gameOver" class="hidden">
+   
