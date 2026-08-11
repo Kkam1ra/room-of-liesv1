@@ -29,8 +29,6 @@
 </head>
 <body>
 <div class="container">
-
-  <!-- LOBBY -->
   <div id="lobby">
     <h1>Room of Lies</h1>
     <input id="playerName" placeholder="Enter your name">
@@ -44,48 +42,67 @@
     </div>
     <div id="publicRooms"></div>
   </div>
-
-  <!-- WAITING ROOM -->
   <div id="waiting" class="hidden">
     <h2>Room Code: <span id="roomCode"></span></h2>
     <div id="playerList"></div>
     <button onclick="addBot()">Add Bot</button>
     <p id="countdown"></p>
   </div>
-
-  <!-- GAME -->
   <div id="game" class="hidden">
     <div class="phase" id="phase">Loading...</div>
     <div class="timer" id="timer"></div>
-    
     <div id="roleCard" class="card">
       <h2 id="roleName"></h2>
       <p>Number: <span id="playerNumber"></span></p>
       <p>Agenda: <span id="agenda"></span></p>
       <p id="teamInfo" class="hidden"></p>
     </div>
-
     <div id="clueBox" class="clue hidden"></div>
-
     <button id="earlyVoteBtn" class="secondary hidden" onclick="requestEarlyVote()">Request Early Vote</button>
     <button id="investigateBtn" class="secondary hidden" onclick="showInvestigate()">Investigate</button>
-
-    <div id="votingBox" class="card hidden">
-      <h3>Vote someone out</h3>
-      <div id="voteList"></div>
-    </div>
-
-    <div id="policeBox" class="card hidden">
-      <h3>Police Decision</h3>
-      <p>Pick who to eliminate from votes</p>
-      <div id="policeList"></div>
-    </div>
-
+    <div id="votingBox" class="card hidden"><h3>Vote someone out</h3><div id="voteList"></div></div>
+    <div id="policeBox" class="card hidden"><h3>Police Decision</h3><p>Pick who to eliminate from votes</p><div id="policeList"></div></div>
     <div class="chat" id="chat"></div>
     <input id="chatInput" placeholder="Type message..." onkeydown="if(event.key==='Enter') sendMsg()">
     <button onclick="sendMsg()">Send</button>
   </div>
-
-  <!-- GAME OVER -->
-  <div id="gameOver" class="hidden">
+  <div id="gameOver" class="hidden"><h1 id="winnerText"></h1><button onclick="location.reload()">Play Again</button></div>
+</div>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+const socket = io('https://room-of-lies-a25z.onrender.com');
+socket.on('connect_error', (err) => { alert('Socket failed: ' + err.message); });
+let roomCode = ''; let myId = socket.id; let myRole = ''; let phase = 'lobby';
+socket.on('connect', () => myId = socket.id);
+function createRoom(isPrivate) { const name = document.getElementById('playerName').value || 'Player'; socket.emit('createRoom', {playerName: name, isPrivate}); }
+function showJoin() { document.getElementById('joinCodeDiv').classList.remove('hidden'); }
+function joinRoom() { const code = document.getElementById('joinCode').value.toUpperCase(); const name = document.getElementById('playerName').value || 'Player'; socket.emit('joinRoom', {code, playerName: name}); }
+function showPublicRooms() { socket.emit('getPublicRooms'); }
+socket.on('publicRoomList', (rooms) => { const div = document.getElementById('publicRooms'); div.innerHTML = '<h3>Public Rooms</h3>' + rooms.map(r => `<button onclick="joinPublic('${r.code}')">${r.code} - ${r.players} players</button>`).join(''); });
+function joinPublic(code) { const name = document.getElementById('playerName').value || 'Player'; socket.emit('joinPublicRoom', {code, playerName: name}); }
+function addBot() { socket.emit('addBot', roomCode); }
+socket.on('roomCreated', ({code, directJoin}) => { roomCode = code; document.getElementById('lobby').classList.add('hidden'); document.getElementById('waiting').classList.remove('hidden'); document.getElementById('roomCode').innerText = code; });
+socket.on('playerList', (players) => { const div = document.getElementById('playerList'); div.innerHTML = players.map(p => `<div class="player ${p.alive ? '' : 'dead'}">${p.name} ${p.isBot ? '[BOT]' : ''} ${p.hasVoted ? '✓' : ''}</div>`).join(''); });
+socket.on('countdown', (t) => { document.getElementById('countdown').innerText = `Starting in ${t}s...`; });
+socket.on('roleAssigned', (data) => { document.getElementById('waiting').classList.add('hidden'); document.getElementById('game').classList.remove('hidden'); myRole = data.role; document.getElementById('roleName').innerText = data.role; document.getElementById('playerNumber').innerText = data.number; document.getElementById('agenda').innerText = data.agenda; if(data.team) { document.getElementById('teamInfo').classList.remove('hidden'); document.getElementById('teamInfo').innerText = `Secret Team: ${data.team}`; } if(data.role === 'Reporter') document.getElementById('investigateBtn').classList.remove('hidden'); });
+socket.on('roundStart', ({round, total, clue}) => { document.getElementById('clueBox').classList.remove('hidden'); document.getElementById('clueBox').innerText = `Round ${round}/${total} - ${clue}`; });
+socket.on('phaseChange', ({phase: p, time}) => { phase = p; document.getElementById('phase').innerText = p.toUpperCase(); startTimer(time); document.getElementById('earlyVoteBtn').classList.toggle('hidden', p !== 'investigation'); document.getElementById('votingBox').classList.toggle('hidden', p !== 'voting'); document.getElementById('policeBox').classList.toggle('hidden', p !== 'police'); });
+let timerInterval; function startTimer(ms) { clearInterval(timerInterval); let s = Math.floor(ms/1000); updateTimer(s); timerInterval = setInterval(() => { s--; updateTimer(s); if(s <= 0) clearInterval(timerInterval); }, 1000); }
+function updateTimer(s) { const m = Math.floor(s/60); const sec = s%60; document.getElementById('timer').innerText = `${m}:${sec.toString().padStart(2,'0')}`; }
+socket.on('publicMsg', ({from, msg}) => { addChat(`<span class="from">${from}:</span> ${msg}`); });
+socket.on('gangsterMsg', ({from, msg}) => { addChat(`<span style="color:#ff5555">[GANGSTER] ${from}:</span> ${msg}`); });
+socket.on('systemMsg', (msg) => { addChat(`<span style="color:#aaa">[SYSTEM] ${msg}</span>`); });
+function addChat(html) { const chat = document.getElementById('chat'); chat.innerHTML += `<div class="msg">${html}</div>`; chat.scrollTop = chat.scrollHeight; }
+function sendMsg() { const input = document.getElementById('chatInput'); const msg = input.value; if(!msg) return; if(phase === 'investigation' || phase === 'discussion') { socket.emit('publicMessage', {code: roomCode, msg}); } else if(phase === 'gangster') { socket.emit('gangsterMessage', {code: roomCode, msg}); } input.value = ''; }
+socket.on('voteUpdate', (votes) => { socket.emit('getPlayerList', roomCode); socket.once('playerList', (players) => { const div = document.getElementById('voteList'); div.innerHTML = players.map(p => `<div class="player">${p.name} - ${votes[p.id] || 0} votes <button class="vote-btn" onclick="vote('${p.id}')">Vote</button></div>`).join(''); }); });
+function vote(targetId) { socket.emit('publicVote', {code: roomCode, targetId}); }
+socket.on('policeDecision', ({votes}) => { const div = document.getElementById('policeList'); div.innerHTML = Object.keys(votes).map(id => { return `<button onclick="policeChoose('${id}')">${id} - ${votes[id]} votes</button>`; }).join(''); });
+function policeChoose(targetId) { socket.emit('policeChoose', {code: roomCode, targetId}); }
+function requestEarlyVote() { socket.emit('requestEarlyVote', {code: roomCode}); }
+function showInvestigate() { prompt("Enter player name to investigate:"); }
+socket.on('elimination', ({type, name, role}) => { addChat(`<span style="color:#ff5555">[ELIMINATED] ${name} was ${role} - ${type}</span>`); });
+socket.on('gameOver', ({winner, message}) => { document.getElementById('game').classList.add('hidden'); document.getElementById('gameOver').classList.remove('hidden'); document.getElementById('winnerText').innerText = message; });
+</script>
+</body>
+</html>
    
