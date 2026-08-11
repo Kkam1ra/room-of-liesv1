@@ -9,9 +9,10 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.static(path.join(__dirname, 'public')));
 
 const rooms = {};
-const ROLES = ['Gangster','Gangster','Police','Reporter','Neutral Citizen','Normal Citizen','Citizen Type 1','Citizen Type 2','Citizen Type 3'];
-const DISCUSSION_TIME = 28 * 60 * 1000; // 28 min
-const VOTING_TIME = 2 * 60 * 1000; // 2 min
+const ROLES = ['Gangster','Gangster','Police','Reporter','Neutral Citizen','Normal Citizen','Normal Citizen','Normal Citizen','Normal Citizen'];
+const INVESTIGATION_TIME = 27 * 60 * 1000;
+const DISCUSSION_TIME = 3 * 60 * 1000;
+const POLICE_DECISION_TIME = 30 * 1000; // 30s for police to choose
 const MAX_ROUNDS = 5;
 const BOT_NAMES = ['Alex','Sam','Jordan','Casey','Riley','Taylor','Morgan','Blake'];
 
@@ -19,7 +20,23 @@ function generateCode() { return Math.random().toString(36).substring(2, 6).toUp
 function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 
 function createBot() {
-  return { id: 'bot'+Date.now()+Math.random(), name: BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)] + Math.floor(Math.random()*10), role: null, number: Math.floor(Math.random()*100), agenda: null, alive: true, isBot: true, hasVoted: false }
+  return { id: 'bot'+Date.now()+Math.random(), name: BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)] + Math.floor(Math.random()*10), role: null, number: Math.floor(Math.random()*100), agenda: null, team: null, alive: true, isBot: true, hasVoted: false }
+}
+
+function generateClue(room) {
+  const allPlayers = [...room.players,...room.bots].filter(p=>p.alive);
+  const clueTypes = [
+    () => { const nums = allPlayers.map(p=>p.number).sort((a,b)=>a-b); return `Clue: Player numbers range from ${nums[0]} to ${nums[nums.length-1]}`; },
+    () => { const gangsters = allPlayers.filter(p=>p.role==='Gangster').length; return `Clue: There are ${gangsters} Gangsters still alive`; },
+    () => { const mostActiveId = Object.keys(room.messageCount).reduce((a,b)=> room.messageCount[a] > room.messageCount[b]? a : b, null); const name = mostActiveId? getName(mostActiveId, room.code) : 'Someone'; return `Clue: ${name} sent the most messages this round`; },
+    () => { const sum = allPlayers.reduce((acc,p)=>acc+p.number,0); return `Clue: The sum of all player numbers is ${sum}`; },
+  ];
+  return clueTypes[Math.floor(Math.random()*clueTypes.length)]();
+}
+
+function getName(id, code) {
+  const p = [...rooms[code].players,...rooms[code].bots].find(x=>x.id===id);
+  return p? p.name : 'Unknown';
 }
 
 io.on('connection', (socket) => {
@@ -27,9 +44,10 @@ io.on('connection', (socket) => {
   socket.on('createRoom', ({playerName, isPrivate}) => {
     const code = generateCode();
     rooms[code] = {
-      players: [{id: socket.id, name: playerName, role: null, number: null, agenda: null, alive: true, hasVoted: false}],
-      bots: [], state: 'countdown', isPrivate, countdown: 60, round: 0, phase: 'lobby',
-      votes: {}, gangsterKillVotes: {}, roundEvents: [], messageCount: {}, alliances: {}
+      players: [{id: socket.id, name: playerName, role: null, number: null, agenda: null, team: null, alive: true, hasVoted: false}],
+      bots: [], state: 'countdown', isPrivate, countdown: 60, round: 0, phase: 'lobby', code,
+      votes: {}, gangsterKillVotes: {}, policeVote: null, roundEvents: [], messageCount: {}, alliances: {},
+      earlyVoteRequests: new Set()
     };
     socket.join(code);
     socket.emit('roomCreated', {code, directJoin:!isPrivate});
@@ -39,7 +57,7 @@ io.on('connection', (socket) => {
 
   socket.on('joinPublicRoom', ({code, playerName}) => {
     if(rooms[code] &&!rooms[code].isPrivate && rooms[code].state === 'countdown') {
-      rooms[code].players.push({id: socket.id, name: playerName, role: null, number: null, agenda: null, alive: true, hasVoted: false});
+      rooms[code].players.push({id: socket.id, name: playerName, role: null, number: null, agenda: null, team: null, alive: true, hasVoted: false});
       socket.join(code);
       socket.emit('roomCreated', {code, directJoin: true});
       io.to(code).emit('playerList', getPlayerList(code));
@@ -48,7 +66,7 @@ io.on('connection', (socket) => {
 
   socket.on('joinRoom', ({code, playerName}) => {
     if(rooms[code] && rooms[code].state === 'countdown') {
-      rooms[code].players.push({id: socket.id, name: playerName, role: null, number: null, agenda: null, alive: true, hasVoted: false});
+      rooms[code].players.push({id: socket.id, name: playerName, role: null, number: null, agenda: null, team: null, alive: true, hasVoted: false});
       socket.join(code);
       io.to(code).emit('playerList', getPlayerList(code));
     }
@@ -84,14 +102,14 @@ io.on('connection', (socket) => {
   }
 
   function fillWithBots(code) {
-    while(rooms[code].players.length + rooms[code].bots.length < 7) {
+    while(rooms[code].players.length + rooms[code].bots.length < 9) {
       rooms[code].bots.push(createBot());
     }
   }
 
   function startGame(code) {
     const room = rooms[code];
-    room.state = 'playing'; room.round = 1; room.phase = 'discussion';
+    room.state = 'playing'; room.round = 1; room.phase = 'investigation';
     io.emit('publicRoomList', getPublicRooms());
 
     const allPlayers = [...room.players,...room.bots];
@@ -101,55 +119,121 @@ io.on('connection', (socket) => {
       p.role = shuffledRoles[i];
       p.number = Math.floor(Math.random() * 100);
       p.agenda = generateAgenda(p.role);
-      p.hasVoted = false;
-      if(!p.isBot) io.to(p.id).emit('roleAssigned', {role: p.role, number: p.number, agenda: p.agenda});
+      if(p.role === 'Neutral Citizen') p.team = Math.random() < 0.5? 'Gangster' : 'Police';
+      if(!p.isBot) {
+        const payload = {role: p.role, number: p.number, agenda: p.agenda};
+        if(p.role === 'Neutral Citizen') payload.team = p.team;
+        io.to(p.id).emit('roleAssigned', payload);
+      }
     });
 
     io.to(code).emit('playerList', getPlayerList(code));
-    startDiscussion(code);
+    startInvestigation(code);
     runBotAI(code);
   }
 
   function generateAgenda(role) {
     const agendas = {
-      'Gangster': ['Frame someone', 'Survive all rounds', 'Get 1 citizen eliminated'],
-      'Police': ['Catch a gangster', 'Protect the Reporter', 'Survive to round 3'],
-      'Reporter': ['Investigate 2 people', 'Stay alive', 'Expose a gangster'],
+      'Gangster': ['Kill 4 citizens', 'Frame the Reporter', 'Survive to round 3'],
+      'Police': ['Choose the right person to eliminate', 'Find both Gangsters', 'Survive'],
+      'Reporter': ['Investigate 2 people', 'Expose a Gangster', 'Stay alive'],
+      'Neutral Citizen': ['Help your secret team win'],
+      'Normal Citizen': ['Survive', 'Vote correctly', 'Find the Gangsters'],
     };
     const list = agendas[role] || ['Survive'];
     return list[Math.floor(Math.random() * list.length)];
   }
 
-  function startDiscussion(code) {
+  function startInvestigation(code) {
     const room = rooms[code];
     if(room.round > MAX_ROUNDS || checkWin(code)) return endGame(code);
 
-    room.phase = 'discussion';
+    room.phase = 'investigation';
     room.votes = {};
     room.gangsterKillVotes = {};
+    room.policeVote = null;
     room.roundEvents = [];
     room.messageCount = {};
+    room.earlyVoteRequests = new Set();
     [...room.players,...room.bots].forEach(p=>p.hasVoted = false);
-    room.clue = {type: 'random', text: `Clue: ${['Someone is lying','Watch chat activity','Numbers matter this round'][Math.floor(Math.random()*3)]}`};
+    room.clue = generateClue(room);
 
-    io.to(code).emit('phaseChange', {phase: 'discussion', time: DISCUSSION_TIME});
+    io.to(code).emit('phaseChange', {phase: 'investigation', time: INVESTIGATION_TIME});
     io.to(code).emit('roundStart', {round: room.round, total: MAX_ROUNDS, clue: room.clue});
     io.to(code).emit('playerList', getPlayerList(code));
 
     const gangsters = room.players.filter(p => p.role === 'Gangster' && p.alive);
     gangsters.forEach(g => socket.adapter.remoteJoin(g.id, `gangsters-${code}`));
 
+    room.investigationTimeout = setTimeout(() => startDiscussion(code), INVESTIGATION_TIME);
+  }
+
+  function startDiscussion(code) {
+    const room = rooms[code];
+    room.phase = 'discussion';
+    io.to(code).emit('phaseChange', {phase: 'discussion', time: DISCUSSION_TIME});
+    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: '--- FINAL DISCUSSION: 3 MINUTES TO VOTE ---'});
+
     setTimeout(() => startVoting(code), DISCUSSION_TIME);
   }
 
+  // VOTING -> THEN POLICE CHOOSES
   function startVoting(code) {
     const room = rooms[code];
     room.phase = 'voting';
-    io.to(code).emit('phaseChange', {phase: 'voting', time: VOTING_TIME});
-    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: '--- VOTING STARTED. 1 VOTE PER PERSON ---'});
+    io.to(code).emit('phaseChange', {phase: 'voting', time: 60000});
+    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: '--- VOTING NOW. 1 VOTE PER PERSON ---'});
 
-    setTimeout(() => endRound(code), VOTING_TIME);
+    setTimeout(() => policeDecisionPhase(code), 60000);
   }
+
+  // NEW: POLICE DECIDES WHO DIES
+  function policeDecisionPhase(code) {
+    const room = rooms[code];
+    room.phase = 'police';
+    const police = [...room.players,...room.bots].find(p=>p.role==='Police' && p.alive);
+
+    io.to(code).emit('phaseChange', {phase: 'police', time: POLICE_DECISION_TIME});
+    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: '--- POLICE IS DECIDING WHO TO ELIMINATE ---'});
+    io.to(code).emit('voteResults', room.votes); // show who got most votes
+
+    if(police &&!police.isBot) {
+      io.to(police.id).emit('policeDecision', {votes: room.votes}); // only police sees this
+    } else if(police && police.isBot) {
+      // Bot police picks most voted
+      setTimeout(() => {
+        const mostVotedId = Object.keys(room.votes).reduce((a,b)=> room.votes[a] > room.votes[b]? a : b, null);
+        room.policeVote = mostVotedId;
+        endRound(code);
+      }, 5000);
+    }
+
+    setTimeout(() => { if(!room.policeVote) room.policeVote = Object.keys(room.votes)[0]; endRound(code); }, POLICE_DECISION_TIME);
+  }
+
+  socket.on('policeChoose', ({code, targetId}) => {
+    const room = rooms[code];
+    if(room.phase!== 'police') return;
+    const police = [...room.players,...room.bots].find(p=>p.id===socket.id);
+    if(police.role!== 'Police') return;
+    room.policeVote = targetId;
+    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: `Police has made their decision`});
+    endRound(code);
+  });
+
+  socket.on('requestEarlyVote', ({code}) => {
+    const room = rooms[code];
+    if(room.phase!== 'investigation') return;
+    room.earlyVoteRequests.add(socket.id);
+    const aliveCount = getPlayerList(code).length;
+    io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: `${getName(socket.id, code)} wants to vote early. ${room.earlyVoteRequests.size}/${aliveCount}`});
+
+    if(room.earlyVoteRequests.size >= aliveCount) {
+      io.to(code).emit('publicMsg', {from: 'SYSTEM', msg: 'Everyone agreed. Starting discussion early!'});
+      clearTimeout(room.investigationTimeout);
+      startDiscussion(code);
+    }
+  });
 
   function runBotAI(code) {
     const interval = setInterval(() => {
@@ -162,9 +246,14 @@ io.on('connection', (socket) => {
       room.bots.forEach(bot => {
         if(!bot.alive || bot.hasVoted) return;
 
-        if(room.phase === 'discussion' && Math.random() < 0.2) {
+        if(room.phase === 'investigation' && Math.random() < 0.15) {
+          const msgs = [`my number is ${bot.number}`, "anyone got clues?", "checking numbers"];
+          io.to(code).emit('publicMsg', {from: bot.name, msg: msgs[Math.floor(Math.random()*msgs.length)]});
+        }
+
+        if(room.phase === 'discussion' && Math.random() < 0.25) {
           const susTarget = pickSuspect(room, alivePlayers);
-          const msgs = ["sus", "idk", susTarget? `i think ${susTarget.name} is sus` : "chill", "vote him"];
+          const msgs = ["sus", susTarget? `${susTarget.name} is sus` : "idk", "vote him"];
           io.to(code).emit('publicMsg', {from: bot.name, msg: msgs[Math.floor(Math.random()*msgs.length)]});
         }
 
@@ -240,22 +329,18 @@ io.on('connection', (socket) => {
     socket.emit('investigationResult', {target: target.name, result});
   });
 
-  function getName(id, code) {
-    const p = [...rooms[code].players,...rooms[code].bots].find(x=>x.id===id);
-    return p? p.name : 'Unknown';
-  }
-
   function endRound(code) {
     processRoundActions(code);
     rooms[code].round++;
-    startDiscussion(code);
+    startInvestigation(code);
   }
 
-  // ROLE REVEAL ON DEATH
+  // FIX: ONLY POLICE CHOICE MATTERS
   function processRoundActions(code) {
     const room = rooms[code];
     const allPlayers = [...room.players,...room.bots];
 
+    // Gangster kill first
     const killTargetId = Object.keys(room.gangsterKillVotes).reduce((a,b)=> room.gangsterKillVotes[a] > room.gangsterKillVotes[b]? a : b, null);
     if(killTargetId) {
       const killed = allPlayers.find(p=>p.id===killTargetId);
@@ -265,12 +350,12 @@ io.on('connection', (socket) => {
       }
     }
 
-    const voteTargetId = Object.keys(room.votes).reduce((a,b)=> room.votes[a] > room.votes[b]? a : b, null);
-    if(voteTargetId) {
-      const voted = allPlayers.find(p=>p.id===voteTargetId);
-      if(voted) {
+    // Police chooses who dies from votes
+    if(room.policeVote) {
+      const voted = allPlayers.find(p=>p.id===room.policeVote);
+      if(voted && voted.alive) {
         voted.alive = false;
-        io.to(code).emit('elimination', {type: 'vote', name: voted.name, role: voted.role});
+        io.to(code).emit('elimination', {type: 'police elimination', name: voted.name, role: voted.role});
       }
     }
   }
@@ -279,18 +364,22 @@ io.on('connection', (socket) => {
     const room = rooms[code];
     const alive = [...room.players,...room.bots].filter(p => p.alive);
     const aliveGangsters = alive.filter(p => p.role === 'Gangster');
-    const aliveCitizens = alive.filter(p => p.role!== 'Gangster');
-    if(aliveGangsters.length === 0) return 'citizens';
-    if(aliveGangsters.length >= aliveCitizens.length) return 'gangsters';
+    const aliveNeutrals = alive.filter(p => p.role === 'Neutral Citizen');
+    const gangsterTeamAlive = aliveGangsters.length + aliveNeutrals.filter(n=>n.team==='Gangster').length;
+    const policeTeamAlive = alive.filter(p=>p.role!=='Gangster' && (p.role!=='Neutral Citizen' || p.team==='Police')).length;
+
+    if(aliveGangsters.length === 0 && aliveNeutrals.filter(n=>n.team==='Gangster').length === 0) return 'citizens';
+    if(gangsterTeamAlive >= policeTeamAlive) return 'gangsters';
     if(room.round >= MAX_ROUNDS && aliveGangsters.length > 0) return 'gangsters';
     return false;
   }
 
   function endGame(code) {
     const winner = checkWin(code);
-    io.to(code).emit('gameOver', {winner, message: winner === 'gangsters'? 'Gangsters Win!' : 'Citizens Win!'});
+    io.to(code).emit('gameOver', {winner, message: winner === 'gangsters'? 'Gangsters + Neutral Win!' : 'Police + Citizens + Neutral Win!'});
   }
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Room of Lies v1.5 on port ${PORT}`)); 
+server.listen(PORT, () => console.log(`Room of Lies v1.9 on port ${PORT}`)); 
+  
