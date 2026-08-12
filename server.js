@@ -8,20 +8,21 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static('public'));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'game.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/health', (req, res) => res.status(200).send('OK')); // Railway/Render health check
 
 const PORT = process.env.PORT || 3000;
 const rooms = {};
 
-// 200 PUZZLE POOL - ADD THE REST HERE
+// 200 PUZZLE POOL - PASTE ALL 200 HERE
 const PUZZLES = [
   {type:'logic', q:'A train leaves A at 60mph. B leaves 2h later at 90mph. 540 miles apart. Where meet?', realClue:'180mi from B. Check who came from B.', fakeClue:'240mi from A. Check who came from A.'},
   {type:'evidence', q:'Knife 3 prints. Kitchen: #2,#4,#7.', realClue:'Check #2,#4,#7.', fakeClue:'Check #1,#3,#5.'},
-  {type:'logic', q:'3 suspects. Only 1 lying. A: B did it. B: C did it. C: Im innocent.', realClue:'If C innocent, then A or B lying. Check who benefits.', fakeClue:'B is lying so A did it.'},
-  //... PASTE YOUR OTHER 197 PUZZLES HERE IN SAME FORMAT
+  //... ADD THE REST
 ];
 
 const BOT_NAMES = ['Tony','Sal','Vince','Big Mike','Lucy','Frankie','Joey','Maria','Carlo','Rosa'];
+const id = () => Math.random().toString(36).substring(2,9);
 
 function generateRoles(count){
   let gangCount = count >= 11? Math.floor(count*0.2) : Math.floor(count*0.3);
@@ -32,26 +33,26 @@ function generateRoles(count){
   while(roles.length<count) roles.push('Citizen');
   return roles.sort(()=>Math.random()-0.5);
 }
-function makeId() { return Math.random().toString(36).substring(2,9); } // NO UUID
-function initBotMemory() { return {roundHistory: [], votes: [], accusations: {}, susList: new Set(), frameTarget: null, allyIds: []}; }
 
 io.on('connection', (socket) => {
   socket.on('createRoom', ({playerName}) => {
-    const code = makeId().toUpperCase();
+    const code = id().toUpperCase();
     rooms[code] = {code,players:[],alliances:[],phase:'lobby',round:0,votes:{},gangVotes:{},currentPuzzle:null,isLieRound:false};
     rooms[code].players.push({id:socket.id,name:playerName,alive:true,isBot:false});
-    socket.join(code); socket.emit('roomCreated', {code});
+    socket.join(code); socket.emit('roomCreated', {code}); io.to(code).emit('playerList', rooms[code].players);
   });
 
   socket.on('joinRoom', ({code, playerName}) => {
-    if(!rooms[code]) return; rooms[code].players.push({id:socket.id,name:playerName,alive:true,isBot:false});
+    if(!rooms[code]) return socket.emit('systemMsg','Room not found'); 
+    rooms[code].players.push({id:socket.id,name:playerName,alive:true,isBot:false});
     io.to(code).emit('playerList', rooms[code].players);
   });
 
   socket.on('addBot', (code) => {
-    const room=rooms[code]; const botId='bot_'+makeId();
-    room.players.push({id:botId,name:BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)]+' Bot',isBot:true,personality:'smart',alive:true,memory: initBotMemory(), fakeNumber: null});
-    io.to(code).emit('playerList', room.players);
+    if(!rooms[code]) return;
+    const botId='bot_'+id();
+    rooms[code].players.push({id:botId,name:BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)]+' Bot',isBot:true,alive:true,memory:{roundHistory:[],votes:[],accusations:{},susList:new Set(),frameTarget:null,allyIds:[]}});
+    io.to(code).emit('playerList', rooms[code].players);
   });
 
   socket.on('startGame', (code) => {
@@ -87,11 +88,11 @@ io.on('connection', (socket) => {
   function checkWin(code){ const room=rooms[code]; const alive=room.players.filter(p=>p.alive); const g=alive.filter(p=>p.team==='Gangster'); const c=alive.filter(p=>p.team==='Citizen'); const pol=alive.filter(p=>p.role==='Police'); if(g.length===0) return endGame(code,'Citizens + Police Win!'); if(g.length>=c.length+pol.length) return endGame(code,'Gangsters Win - Majority!'); if(pol.length===0) return endGame(code,'Gangsters Win - All Police Dead!'); if(room.round>=5 && g.length>0) return endGame(code,'Gangsters Win - Survived 5 Rounds!'); }
   function endGame(code,msg){ io.to(code).emit('gameOver',{message:msg}); }
 
-  socket.on('createAlliance',({code,memberIds})=>{ rooms[code].alliances.push({id:makeId(),members:[socket.id,...memberIds]}); });
-  socket.on('vote',({code,targetId})=>{rooms[code].votes[socket.id]=targetId});
-  socket.on('gangVote',({code,targetId})=>{rooms[code].gangVotes[socket.id]=targetId});
+  socket.on('createAlliance',({code,memberIds})=>{ if(rooms[code]){rooms[code].alliances.push({id:id(),members:[socket.id,...memberIds]}); io.to(code).emit('systemMsg','Alliance formed')}});
+  socket.on('vote',({code,targetId})=>{if(rooms[code])rooms[code].votes[socket.id]=targetId});
+  socket.on('gangVote',({code,targetId})=>{if(rooms[code])rooms[code].gangVotes[socket.id]=targetId});
   socket.on('publicMessage',({code,msg})=>{io.to(code).emit('publicMsg',{from:'Player',msg})});
   socket.on('joinVoice',({code,roomType})=>{socket.join(code+'_'+roomType)});
 });
 
-server.listen(PORT, ()=>console.log('v5.6.0 Running on', PORT));
+server.listen(PORT, '0.0.0.0', ()=>console.log('v5.6.1 Running on', PORT)); // 0.0.0.0 for Railway/Render
