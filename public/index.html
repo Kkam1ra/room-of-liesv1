@@ -1,82 +1,123 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Gangster Investigation v5.7.0</title>
+<title>Gangster Investigation v5.9.1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{background:#111;color:#fff;font-family:Arial;text-align:center}
-.btn{background:#c00;color:#fff;border:none;padding:10px 20px;margin:5px;cursor:pointer;border-radius:5px}
-#game{display:none} #chat{height:200px;overflow:auto;border:1px solid #444;margin:10px;padding:5px;text-align:left}
-#players{text-align:left}.phase{font-size:22px;color:#ff0} #countdown{font-size:32px;color:#0f0;font-weight:bold}
+body{background:#0a0a0a;color:#eee;font-family:Arial;text-align:center;margin:0;padding:10px}
+.btn{background:#c00;color:#fff;border:none;padding:12px 24px;margin:5px;cursor:pointer;border-radius:6px;font-size:16px}
+#game{display:none} #chat{height:250px;overflow:auto;border:1px solid #333;margin:10px;padding:8px;text-align:left;background:#1a1a1a}
+#players,#voteList{text-align:left;background:#1a1a1a;padding:10px;margin:10px;border-radius:5px}
+.phase{font-size:24px;color:#ff0;margin:10px;font-weight:bold}
+#countdown{font-size:36px;color:#0f0;font-weight:bold}
+#puzzle{font-size:18px;margin:15px;padding:10px;background:#222;border-left:4px solid #c00}
+#secret{color:#0ff;margin:10px;white-space:pre-wrap}
+.player-row{padding:5px;margin:2px;background:#2a2a2a;border-radius:3px;cursor:pointer}
+.player-row:hover{background:#3a3a3a}
+.dead{text-decoration:line-through;color:#666}
+input{padding:10px;font-size:16px}
 </style>
 </head>
 <body>
-<h1 style="color:#c00">Gangster Investigation v5.7.0</h1>
+<h1 style="color:#c00;margin:10px">Gangster Investigation v5.9.1</h1>
 
 <div id="lobby">
   <input id="name" placeholder="Enter Name">
+  <br><br>
   <button class="btn" onclick="create()">Create Room</button>
   <button class="btn" onclick="join()">Join Room</button>
   <button class="btn" onclick="addBot()">+ Add Bot</button>
   <button class="btn" onclick="startCountdown()">Start 60s Countdown</button>
-  <h3>Room: <span id="roomCode"></span></h3>
+  <h3>Room: <span id="roomCode" style="color:#0f0"></span></h3>
   <h3 id="countdown"></h3>
   <h3>Players:</h3><div id="players"></div>
 </div>
 
 <div id="game">
-  <div class="phase" id="phase">Lobby</div>
-  <div id="puzzle"></div><div id="secret"></div>
-  <button class="btn" onclick="vote()">🗳️ Vote</button>
+  <div class="phase" id="phase">LOBBY</div>
+  <div id="puzzle"></div>
+  <div id="secret"></div>
+  
+  <button class="btn" onclick="toggleVoteMenu()">🗳️ Vote</button>
+  <div id="voteMenu" style="display:none">
+    <h4>Click who to vote:</h4>
+    <div id="voteList"></div>
+  </div>
+
+  <button class="btn" style="background:#550" onclick="alliance()">🤝 Alliance</button>
   <button class="btn" id="gangBtn" style="display:none;background:#800" onclick="gangVote()">🔪 Gang Kill</button>
   <button class="btn" style="background:#080" id="micBtn" onclick="toggleMic()">🎤 Mic OFF</button>
+  
   <h3>Public Chat</h3><div id="chat"></div>
-  <input id="msg" placeholder="Type message..." onkeydown="if(event.key==='Enter')send()"><button class="btn" onclick="send()">Send</button>
+  <input id="msg" placeholder="Type message..." style="width:60%" onkeydown="if(event.key==='Enter')send()">
+  <button class="btn" onclick="send()">Send</button>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-let roomCode = "", myRole = "", myNumber = "", localStream = null, micOn = false;
-let pc = {}; // peer connections
+let roomCode = "", myRole = "", myNumber = "", allPlayers = [];
 
 function startCountdown(){ socket.emit('startCountdown', roomCode); }
-function create(){ const name = document.getElementById('name').value; if(!name) return alert('Enter name'); roomCode = Math.random().toString(36).substr(2,4).toUpperCase(); socket.emit('createRoom', {playerName: name}); }
-function join(){ const name = document.getElementById('name').value; if(!name) return alert('Enter name'); roomCode = prompt('Enter Room Code:'); socket.emit('joinRoom', {code: roomCode, playerName: name}); }
-function addBot(){ socket.emit('addBot', roomCode); }
-function vote(){ let t=prompt('Vote who? Enter #'); socket.emit('vote',{code:roomCode,targetId:t}) }
-function gangVote(){ let t=prompt('Gang kill who? Enter #'); socket.emit('gangVote',{code:roomCode,targetId:t}) }
-function send(){ let m=document.getElementById('msg').value; if(m) socket.emit('publicMessage',{code:roomCode,msg:m}); document.getElementById('msg').value='' }
+function create(){ const name=document.getElementById('name').value; if(!name)return alert('Enter name'); roomCode=Math.random().toString(36).substr(2,4).toUpperCase(); socket.emit('createRoom',{playerName:name}); }
+function join(){ const name=document.getElementById('name').value; if(!name)return alert('Enter name'); roomCode=prompt('Enter Room Code:'); socket.emit('joinRoom',{code:roomCode,playerName:name}); }
+function addBot(){ socket.emit('addBot',roomCode); }
 
+function toggleVoteMenu(){
+  document.getElementById('voteMenu').style.display = 
+    document.getElementById('voteMenu').style.display==='none' ? 'block' : 'none';
+}
+
+function votePlayer(id){
+  socket.emit('vote',{code:roomCode,targetId:id});
+  alert('Voted!');
+  toggleVoteMenu();
+}
+function gangVotePlayer(id){
+  socket.emit('gangVote',{code:roomCode,targetId:id});
+  alert('Gang voted!');
+  toggleVoteMenu();
+}
+
+function gangVote(){ toggleVoteMenu(); } // opens same menu
+function alliance(){ let t=prompt('Alliance with who? Enter player #'); if(t)socket.emit('createAlliance',{code:roomCode,targetId:t}) }
+function send(){ let m=document.getElementById('msg').value; if(m)socket.emit('publicMessage',{code:roomCode,msg:m}); document.getElementById('msg').value='' }
 async function toggleMic(){
-  micOn =!micOn;
-  document.getElementById('micBtn').innerText = micOn? '🎤 Mic ON' : '🎤 Mic OFF';
-  if(micOn){
-    localStream = await navigator.mediaDevices.getUserMedia({audio:true});
-    socket.emit('joinVoice', {code:roomCode, roomType:'public'});
-    alert('Mic ON. Other players can hear you during Discussion phase');
+  const btn=document.getElementById('micBtn');
+  if(btn.innerText.includes('OFF')){
+    await navigator.mediaDevices.getUserMedia({audio:true}).catch(()=>{});
+    btn.innerText='🎤 Mic ON'; btn.style.background='#080';
   } else {
-    localStream?.getTracks().forEach(t=>t.stop());
+    btn.innerText='🎤 Mic OFF'; btn.style.background='#555';
   }
 }
 
-socket.on('countdownStart', (sec)=>{
-  let time = sec;
-  const el = document.getElementById('countdown');
-  const timer = setInterval(()=>{
-    el.innerText = `Game starts in: ${time}s`;
-    time--;
-    if(time<0){ clearInterval(timer); el.innerText=''; }
-  }, 1000);
+function renderVoteList(){
+  const list = document.getElementById('voteList');
+  list.innerHTML = '';
+  allPlayers.filter(p=>p.alive && p.id !== socket.id).forEach(p=>{
+    const div = document.createElement('div');
+    div.className = 'player-row';
+    div.innerText = `#${p.number} ${p.name}`;
+    div.onclick = () => myRole==='Gangster' && room.phase==='gangster' ? gangVotePlayer(p.id) : votePlayer(p.id);
+    list.appendChild(div);
+  });
+}
+
+socket.on('countdownStart',(sec)=>{let time=sec;const el=document.getElementById('countdown');const timer=setInterval(()=>{el.innerText=`Game starts in: ${time}s`;time--;if(time<0){clearInterval(timer);el.innerText='';}},1000);});
+socket.on('roomCreated',(d)=>{roomCode=d.code;document.getElementById('roomCode').innerText=roomCode;});
+socket.on('playerList',(players)=>{
+  allPlayers = players;
+  document.getElementById('players').innerHTML=players.map(p=>`<span class="${p.alive?'':'dead'}">${p.name} #${p.number||'?'}</span>`).join('<br>');
+  renderVoteList();
 });
-socket.on('roomCreated', (d)=>{ roomCode=d.code; document.getElementById('roomCode').innerText=roomCode; });
-socket.on('playerList', (players)=>{ document.getElementById('players').innerHTML = players.map(p=>`${p.name} #${p.number||'?'}`).join('<br>'); });
-socket.on('roleAssigned', (d)=>{ myRole=d.role; myNumber=d.number; document.getElementById('lobby').style.display='none'; document.getElementById('game').style.display='block'; document.getElementById('secret').innerText = `You are: ${d.role} #${d.number} ${d.teamCard?' | Card:'+d.teamCard:''}`; if(d.role==='Gangster') document.getElementById('gangBtn').style.display='inline-block'; });
-socket.on('roundStart', (d)=>{ document.getElementById('puzzle').innerText = `Round ${d.round}: ${d.clue}` });
-socket.on('secretClue', (d)=>{ document.getElementById('secret').innerText += `\n${d}` });
-socket.on('phaseChange', (d)=>{ document.getElementById('phase').innerText = `PHASE: ${d.phase.toUpperCase()}` });
-socket.on('publicMsg', (d)=>{ document.getElementById('chat').innerHTML += `<b>${d.from}:</b> ${d.msg}<br>` });
-socket.on('systemMsg', (d)=>{ document.getElementById('chat').innerHTML += `<i style="color:yellow">${d}</i><br>` });
-socket.on('gameOver', (d)=>{ alert(d.message); location.reload(); });
+socket.on('roleAssigned',(d)=>{myRole=d.role;myNumber=d.number;document.getElementById('lobby').style.display='none';document.getElementById('game').style.display='block';document.getElementById('secret').innerText=`You are: ${d.role} #${d.number}\n${d.teamCard?'Card: '+d.teamCard:''}`;if(d.role==='Gangster')document.getElementById('gangBtn').style.display='inline-block';});
+socket.on('roundStart',(d)=>{document.getElementById('puzzle').innerText=`ROUND ${d.round}: ${d.clue}`});
+socket.on('secretClue',(d)=>{document.getElementById('secret').innerText+=`\n${d}`});
+socket.on('phaseChange',(d)=>{window.room={phase:d.phase};document.getElementById('phase').innerText=`PHASE: ${d.phase.toUpperCase()}`; renderVoteList();});
+socket.on('publicMsg',(d)=>{document.getElementById('chat').innerHTML+=`<b>${d.from}:</b> ${d.msg}<br>`;document.getElementById('chat').scrollTop=document.getElementById('chat').scrollHeight;});
+socket.on('systemMsg',(d)=>{document.getElementById('chat').innerHTML+=`<i style="color:yellow">${d}</i><br>`;document.getElementById('chat').scrollTop=document.getElementById('chat').scrollHeight;});
+socket.on('gameOver',(d)=>{alert(d.message);location.reload();});
 </script>
 </body>
 </html>
