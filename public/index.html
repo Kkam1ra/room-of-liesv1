@@ -1,108 +1,140 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Gangster Game v4.3 + Voice</title>
+<title>Gangster Investigation v5.5.1</title>
 <style>
-body{font-family:Arial;background:#0a0a0a;color:#fff;margin:0;padding:20px}
-.card{background:#1a1a1a;padding:15px;margin:10px;border-radius:8px}
-button{padding:10px 20px;margin:5px;background:#4CAF50;color:#fff;border:none;border-radius:5px;cursor:pointer}
-.danger{background:#f44336}.secondary{background:#555}.purple{background:#9c27b0}.cyan{background:#00bcd4}
-.hidden{display:none}
-#chat{height:300px;overflow-y:auto;background:#000;padding:10px;margin:10px 0}
-#timer{font-size:36px;color:#ffeb3b;text-align:center}
+body{background:#111;color:#eee;font-family:Arial;text-align:center;margin:0;padding:20px}
+h1{color:#c00}
+#game{display:none} 
+.btn{padding:10px 15px;margin:5px;background:#c00;color:white;border:none;border-radius:4px;cursor:pointer;font-size:16px}
+.btn:hover{background:#a00}
+#chat{height:250px;overflow-y:scroll;border:2px solid #444;text-align:left;padding:10px;background:#000;margin:10px 0}
+.phase{font-size:28px;color:yellow;font-weight:bold;margin:10px}
+#puzzle{font-size:18px;background:#222;padding:15px;border-radius:8px;margin:10px}
+#secret{font-size:16px;color:#0f0;font-weight:bold;margin:10px}
+#players{text-align:left;background:#222;padding:10px;border-radius:5px}
+input{padding:8px;font-size:16px;border-radius:4px;border:1px solid #444;background:#222;color:#eee}
 </style>
 </head>
 <body>
+<h1>Gangster Investigation</h1>
+
 <div id="lobby">
-  <h1>Gangster Game v4.3 + Voice</h1>
-  <input id="nameInput" placeholder="Your Name">
-  <button onclick="createRoom()">Create Room</button>
-  <button onclick="joinRoom()">Join Room</button>
-  <button onclick="addBot()">+ Add Bot</button>
-  <div id="playerList"></div>
-  <div id="countdown"></div>
+  <input id="name" placeholder="Enter Name">
+  <button class="btn" onclick="create()">Create Room</button>
+  <button class="btn" onclick="join()">Join Room</button>
+  <button class="btn" onclick="addBot()">+ Add Bot</button>
+  <button class="btn" onclick="socket.emit('startGame',roomCode)">Start Game</button>
+  <h3>Players:</h3>
+  <div id="players"></div>
 </div>
 
-<div id="game" class="hidden">
-  <h2 id="phaseTitle"></h2>
-  <div id="timer"></div>
-  <div class="card"><h3 id="publicClue"></h3><p id="secretClue"></p></div>
-  <div id="roleCard" class="card"></div>
-
-  <button id="micBtn" onmousedown="startTalk()" onmouseup="stopTalk()">🎤 Hold to Talk - Global</button>
-  <button id="policeBtn" class="danger hidden" onclick="policeEliminate()">Police: Eliminate</button>
-  <button id="reporterBtn" class="secondary hidden" onclick="useReporter()">Reporter: Investigate</button>
-  <button onclick="createAlliance()" class="cyan">+ Create Alliance</button>
-
-  <div id="gangsterUI" class="card purple hidden">
-    <h3>Gangster Chat - Vote Kill or SKIP</h3>
-    <div id="gangsterChat"></div>
-  </div>
-
-  <div id="chat" class="card"></div>
-  <input id="msgInput" placeholder="Type message"><button onclick="sendMsg()">Send</button>
+<div id="game">
+  <div class="phase" id="phase">Lobby</div>
+  <div id="puzzle"></div>
+  <div id="secret"></div>
+  
+  <button class="btn" onclick="vote()">🗳️ Vote Player</button>
+  <button class="btn" id="gangBtn" style="display:none;background:#800" onclick="gangVote()">🔪 Gang Kill</button>
+  <button class="btn" style="background:#080" onclick="talk()">🎤 Talk</button>
+  <button class="btn" style="background:#880" onclick="stop()">🔇 Stop</button>
+  
+  <h3>Public Chat</h3>
+  <div id="chat"></div>
+  <input id="msg" placeholder="Type message..." onkeydown="if(event.key==='Enter')send()">
+  <button class="btn" onclick="send()">Send</button>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket=io();let roomCode,myRole,myId,recording=false,localStream,peerConnections={};
-const iceServers={iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+const socket=io(); 
+let roomCode="", myRole="", myNumber="";
 
-// GET ELEMENTS
-const lobby=document.getElementById('lobby');
-const game=document.getElementById('game');
-const nameInput=document.getElementById('nameInput');
-const playerList=document.getElementById('playerList');
-const countdown=document.getElementById('countdown');
-const roleCard=document.getElementById('roleCard');
-const policeBtn=document.getElementById('policeBtn');
-const reporterBtn=document.getElementById('reporterBtn');
-const publicClue=document.getElementById('publicClue');
-const secretClue=document.getElementById('secretClue');
-const phaseTitle=document.getElementById('phaseTitle');
-const timerDiv=document.getElementById('timer');
-const gangsterUI=document.getElementById('gangsterUI');
-const chat=document.getElementById('chat');
-const msgInput=document.getElementById('msgInput');
-const micBtn=document.getElementById('micBtn');
-
-function createRoom(){socket.emit('createRoom',{playerName:nameInput.value,isPrivate:false})}
-function joinRoom(){socket.emit('joinRoom',{code:prompt('Enter Room Code'),playerName:nameInput.value})}
+function create(){
+  roomCode=Math.random().toString(36).substr(2,4).toUpperCase(); 
+  socket.emit('createRoom',{playerName:document.getElementById('name').value})
+}
+function join(){
+  let code = prompt('Enter Room Code:');
+  socket.emit('joinRoom',{code:code,playerName:document.getElementById('name').value})
+}
 function addBot(){socket.emit('addBot',roomCode)}
 
-socket.on('roomCreated',d=>{roomCode=d.code;lobby.classList.add('hidden');game.classList.remove('hidden')})
-socket.on('playerList',players=>{playerList.innerHTML=players.map(p=>`<div>#${p.number||'?'} ${p.name} ${p.alive?'':'💀'}</div>`).join('')})
-socket.on('preGameCountdown',t=>{countdown.innerHTML=`Starting in ${t}s`})
+socket.on('roomCreated',d=>{
+  roomCode=d.code; 
+  document.getElementById('lobby').innerHTML=`<h2>Room Code: ${d.code}</h2><button class="btn" onclick="socket.emit('startGame',roomCode)">Start Game</button><div id="players"></div>`
+})
+
+socket.on('playerList',p=>{
+  document.getElementById('players').innerHTML=p.map(x=>`${x.name} ${x.alive?'':'💀 DEAD'}`).join('<br>')
+})
+
 socket.on('roleAssigned',d=>{
-  myRole=d.role;
-  roleCard.innerHTML=`<h3>Your Role: ${d.role} #${d.number}</h3><p>Team: ${d.team}</p>${d.teamCard?`<p style="color:yellow">Secret Team: ${d.teamCard}</p>`:''}<p>Power: ${d.power||'None'}</p>`;
-  policeBtn.classList.toggle('hidden',d.role!=='Police');
-  reporterBtn.classList.toggle('hidden',d.role!=='Reporter')
+  myRole=d.role; 
+  myNumber=d.number; 
+  alert(`You are ${d.role} #${d.number}\n${d.teamCard||''}\nTeam: ${d.team}`);
+  document.getElementById('lobby').style.display='none'; 
+  document.getElementById('game').style.display='block'
 })
-socket.on('roundStart',d=>{publicClue.innerHTML=d.clue})
-socket.on('secretClue',d=>{secretClue.innerHTML=d})
+
+socket.on('roundStart',d=>{
+  document.getElementById('puzzle').innerHTML=`<h2>Round ${d.round}</h2><p>${d.clue}</p>`
+  document.getElementById('secret').innerHTML=""
+})
+
+socket.on('secretClue',d=>{
+  document.getElementById('secret').innerHTML=`<b>${d}</b>`
+})
+
 socket.on('phaseChange',d=>{
-  phaseTitle.innerHTML=`PHASE: ${d.phase.toUpperCase()}`;
-  gangsterUI.classList.toggle('hidden',!(d.phase==='gangster'&&myRole==='Gangster'));
-  let time=d.time/1000;const timer=setInterval(()=>{timerDiv.innerHTML=`${Math.floor(time/60)}:${(time%60).toString().padStart(2,'0')}`;time--;if(time<0)clearInterval(timer)},1000)
+  document.getElementById('phase').innerText=d.phase.toUpperCase(); 
+  document.getElementById('gangBtn').style.display=(d.phase==='gangster'&&myRole==='Gangster')?'inline-block':'none'
 })
-socket.on('publicMsg',d=>{chat.innerHTML+=`<div><b>${d.from}:</b> ${d.msg}</div>`;chat.scrollTop=chat.scrollHeight})
-socket.on('systemMsg',d=>{chat.innerHTML+=`<div style="color:orange;font-weight:bold">SYSTEM: ${d}</div>`;chat.scrollTop=chat.scrollHeight})
-socket.on('gameOver',d=>{alert(d.message)})
 
-function sendMsg(){socket.emit('publicMessage',{code:roomCode,msg:msgInput.value});msgInput.value=''}
-function policeEliminate(){const id=prompt('Enter Player ID to eliminate');socket.emit('policeEliminate',{code:roomCode,targetId:id})}
-function useReporter(){const id=prompt('Enter Player ID to Investigate');socket.emit('useReporter',{code:roomCode,targetId:id})}
-function createAlliance(){const ids=prompt('Enter Player IDs comma separated');socket.emit('createAlliance',{code:roomCode,memberIds:ids.split(',')})}
+socket.on('publicMsg',d=>{
+  let chat = document.getElementById('chat');
+  chat.innerHTML+=`<div><b>${d.from}:</b> ${d.msg}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+})
 
-async function startTalk(){
-  if(recording)return;
-  recording=true;micBtn.innerHTML='🔴 Talking...';micBtn.style.background='#f44336';
-  localStream=await navigator.mediaDevices.getUserMedia({audio:true});
-  let roomType='global';if(myRole==='Gangster')roomType='gang';
-  socket.emit('joinVoice',{code:roomCode,roomType})
+socket.on('systemMsg',d=>{
+  let chat = document.getElementById('chat');
+  chat.innerHTML+=`<div style="color:orange"><b>SYSTEM:</b> ${d}</div>`;
+  chat.scrollTop = chat.scrollHeight;
+})
+
+socket.on('gameOver',d=>{
+  alert('GAME OVER: ' + d.message)
+})
+
+function send(){
+  let msg = document.getElementById('msg');
+  socket.emit('publicMessage',{code:roomCode,msg:msg.value}); 
+  msg.value=""
 }
-function stopTalk(){recording=false;micBtn.innerHTML='🎤 Hold to Talk - Global';micBtn.style.background='#4CAF50';socket.emit('leaveVoice',{code:roomCode,roomType:'global'})}
+
+function vote(){
+  let target = prompt('Enter Player # to vote:');
+  socket.emit('vote',{code:roomCode,targetId:target})
+}
+
+function gangVote(){
+  let target = prompt('Enter Player # to kill:');
+  socket.emit('gangVote',{code:roomCode,targetId:target})
+}
+
+let stream; 
+async function talk(){
+  stream=await navigator.mediaDevices.getUserMedia({audio:true}); 
+  socket.emit('joinVoice',{code:roomCode,roomType:'global'});
+  alert("Mic ON")
+}
+
+function stop(){
+  if(stream) stream.getTracks().forEach(t=>t.stop()); 
+  socket.emit('leaveVoice',{code:roomCode,roomType:'global'});
+  alert("Mic OFF")
+}
 </script>
 </body>
 </html>
